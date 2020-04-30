@@ -16,7 +16,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var (
+const (
 	requestURL      = "https://api.twitter.com/oauth/request_token"
 	authorizeURL    = "https://api.twitter.com/oauth/authorize"
 	authenticateURL = "https://api.twitter.com/oauth/authenticate"
@@ -31,12 +31,17 @@ var (
 // If you'd like to use authenticate instead of authorize, use NewAuthenticate instead.
 func New(clientKey, secret, callbackURL string) *Provider {
 	p := &Provider{
-		ClientKey:    clientKey,
-		Secret:       secret,
-		CallbackURL:  callbackURL,
-		providerName: "twitter",
+		ClientKey:       clientKey,
+		Secret:          secret,
+		CallbackURL:     callbackURL,
+		providerName:    "twitter",
+		endpointProfile: endpointProfile,
 	}
-	p.consumer = newConsumer(p, authorizeURL)
+	p.consumer = newConsumer(p, oauth.ServiceProvider{
+		RequestTokenUrl:   requestURL,
+		AuthorizeTokenUrl: authorizeURL,
+		AccessTokenUrl:    tokenURL,
+	})
 	return p
 }
 
@@ -44,24 +49,42 @@ func New(clientKey, secret, callbackURL string) *Provider {
 // NewAuthenticate uses the authenticate URL instead of the authorize URL.
 func NewAuthenticate(clientKey, secret, callbackURL string) *Provider {
 	p := &Provider{
-		ClientKey:    clientKey,
-		Secret:       secret,
-		CallbackURL:  callbackURL,
-		providerName: "twitter",
+		ClientKey:       clientKey,
+		Secret:          secret,
+		CallbackURL:     callbackURL,
+		providerName:    "twitter",
+		endpointProfile: endpointProfile,
 	}
-	p.consumer = newConsumer(p, authenticateURL)
+	p.consumer = newConsumer(p, oauth.ServiceProvider{
+		RequestTokenUrl:   requestURL,
+		AuthorizeTokenUrl: authenticateURL,
+		AccessTokenUrl:    tokenURL,
+	})
+	return p
+}
+
+func newWithSP(clientKey, secret, callbackURL string, sp oauth.ServiceProvider) *Provider {
+	p := &Provider{
+		ClientKey:       clientKey,
+		Secret:          secret,
+		CallbackURL:     callbackURL,
+		providerName:    "twitter",
+		endpointProfile: endpointProfile,
+	}
+	p.consumer = newConsumer(p, sp)
 	return p
 }
 
 // Provider is the implementation of `goth.Provider` for accessing Twitter.
 type Provider struct {
-	ClientKey    string
-	Secret       string
-	CallbackURL  string
-	HTTPClient   *http.Client
-	debug        bool
-	consumer     *oauth.Consumer
-	providerName string
+	ClientKey       string
+	Secret          string
+	CallbackURL     string
+	HTTPClient      *http.Client
+	debug           bool
+	consumer        *oauth.Consumer
+	providerName    string
+	endpointProfile string
 }
 
 // Name is the name used to retrieve this provider later.
@@ -107,7 +130,7 @@ func (p *Provider) FetchUser(session goth.Session) (goth.User, error) {
 	}
 
 	response, err := p.consumer.Get(
-		endpointProfile,
+		p.endpointProfile,
 		map[string]string{"include_entities": "false", "skip_status": "true", "include_email": "true"},
 		sess.AccessToken)
 	if err != nil {
@@ -139,15 +162,12 @@ func (p *Provider) FetchUser(session goth.Session) (goth.User, error) {
 	return user, err
 }
 
-func newConsumer(provider *Provider, authURL string) *oauth.Consumer {
+func newConsumer(provider *Provider, sp oauth.ServiceProvider) *oauth.Consumer {
 	c := oauth.NewConsumer(
 		provider.ClientKey,
 		provider.Secret,
-		oauth.ServiceProvider{
-			RequestTokenUrl:   requestURL,
-			AuthorizeTokenUrl: authURL,
-			AccessTokenUrl:    tokenURL,
-		})
+		sp,
+	)
 
 	c.Debug(provider.debug)
 	return c

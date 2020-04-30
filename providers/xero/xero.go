@@ -42,11 +42,14 @@ type APIResponse struct {
 	Organisations []Organisation `json:"Organisations,omitempty"`
 }
 
-var (
+const (
 	requestURL      = "https://api.xero.com/oauth/RequestToken"
 	authorizeURL    = "https://api.xero.com/oauth/Authorize"
 	tokenURL        = "https://api.xero.com/oauth/AccessToken"
 	endpointProfile = "https://api.xero.com/api.xro/2.0/"
+)
+
+var (
 	//userAgentString should be changed to match the name of your Application
 	userAgentString    = os.Getenv("XERO_USER_AGENT") + " (goth-xero 1.0)"
 	privateKeyFilePath = os.Getenv("XERO_PRIVATE_KEY_PATH")
@@ -56,6 +59,14 @@ var (
 // You should always call `xero.New` to get a new Provider. Never try to create
 // one manually.
 func New(clientKey, secret, callbackURL string) *Provider {
+	return newWithSP(clientKey, secret, callbackURL, oauth.ServiceProvider{
+		RequestTokenUrl:   requestURL,
+		AuthorizeTokenUrl: authorizeURL,
+		AccessTokenUrl:    tokenURL,
+	})
+}
+
+func newWithSP(clientKey, secret, callbackURL string, sp oauth.ServiceProvider) *Provider {
 	p := &Provider{
 		ClientKey:   clientKey,
 		Secret:      secret,
@@ -64,33 +75,31 @@ func New(clientKey, secret, callbackURL string) *Provider {
 		//Options are public, private, and partner
 		//Use public if this is your first time.
 		//More details here: https://developer.xero.com/documentation/getting-started/api-application-types
-		Method:       os.Getenv("XERO_METHOD"),
-		providerName: "xero",
+		Method:          os.Getenv("XERO_METHOD"),
+		providerName:    "xero",
+		endpointProfile: endpointProfile,
 	}
 
 	switch p.Method {
-	case "private":
-		p.consumer = newPrivateOrPartnerConsumer(p, authorizeURL)
-	case "public":
-		p.consumer = newPublicConsumer(p, authorizeURL)
-	case "partner":
-		p.consumer = newPrivateOrPartnerConsumer(p, authorizeURL)
+	case "private", "partner":
+		p.consumer = newPrivateOrPartnerConsumer(p, sp)
 	default:
-		p.consumer = newPublicConsumer(p, authorizeURL)
+		p.consumer = newPublicConsumer(p, sp)
 	}
 	return p
 }
 
 // Provider is the implementation of `goth.Provider` for accessing Xero.
 type Provider struct {
-	ClientKey    string
-	Secret       string
-	CallbackURL  string
-	HTTPClient   *http.Client
-	Method       string
-	debug        bool
-	consumer     *oauth.Consumer
-	providerName string
+	ClientKey       string
+	Secret          string
+	CallbackURL     string
+	HTTPClient      *http.Client
+	Method          string
+	debug           bool
+	consumer        *oauth.Consumer
+	providerName    string
+	endpointProfile string
 }
 
 // Name is the name used to retrieve this provider later.
@@ -140,7 +149,7 @@ func (p *Provider) FetchUser(session goth.Session) (goth.User, error) {
 	}
 
 	response, err := p.consumer.Get(
-		endpointProfile+"Organisation",
+		p.endpointProfile+"Organisation",
 		nil,
 		sess.AccessToken)
 
@@ -180,14 +189,11 @@ func (p *Provider) FetchUser(session goth.Session) (goth.User, error) {
 }
 
 //newPublicConsumer creates a consumer capable of communicating with a Public application: https://developer.xero.com/documentation/auth-and-limits/public-applications
-func newPublicConsumer(provider *Provider, authURL string) *oauth.Consumer {
+func newPublicConsumer(provider *Provider, sp oauth.ServiceProvider) *oauth.Consumer {
 	c := oauth.NewConsumer(
 		provider.ClientKey,
 		provider.Secret,
-		oauth.ServiceProvider{
-			RequestTokenUrl:   requestURL,
-			AuthorizeTokenUrl: authURL,
-			AccessTokenUrl:    tokenURL},
+		sp,
 	)
 
 	c.Debug(provider.debug)
@@ -203,7 +209,7 @@ func newPublicConsumer(provider *Provider, authURL string) *oauth.Consumer {
 }
 
 //newPartnerConsumer creates a consumer capable of communicating with a Partner application: https://developer.xero.com/documentation/auth-and-limits/partner-applications
-func newPrivateOrPartnerConsumer(provider *Provider, authURL string) *oauth.Consumer {
+func newPrivateOrPartnerConsumer(provider *Provider, sp oauth.ServiceProvider) *oauth.Consumer {
 	privateKeyFileContents, err := ioutil.ReadFile(privateKeyFilePath)
 	if err != nil {
 		log.Fatal(err)
@@ -218,10 +224,7 @@ func newPrivateOrPartnerConsumer(provider *Provider, authURL string) *oauth.Cons
 	c := oauth.NewRSAConsumer(
 		provider.ClientKey,
 		privateKey,
-		oauth.ServiceProvider{
-			RequestTokenUrl:   requestURL,
-			AuthorizeTokenUrl: authURL,
-			AccessTokenUrl:    tokenURL},
+		sp,
 	)
 
 	c.Debug(provider.debug)

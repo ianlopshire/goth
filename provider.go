@@ -23,18 +23,40 @@ type Provider interface {
 
 const NoAuthUrlErrorMessage = "an AuthURL has not been set"
 
-// Providers is list of known/available providers.
+var providers = Providers{}
+
+// Providers is a set of known/available providers.
 type Providers map[string]Provider
 
-var providers = Providers{}
+// Use adds a list of providers to the set.
+//
+// Use can be called multiple times. If you pass the same provider more than once, the
+// last will be used.
+func (p Providers) Use(viders ...Provider) {
+	for _, provider := range viders {
+		p[provider.Name()] = provider
+	}
+}
+
+// GetProvider returns a provider by name. If the provider has not been added to the set,
+// an error will be returned.
+func (p Providers) Get(name string) (Provider, error) {
+	provider := providers[name]
+	if provider == nil {
+		return nil, fmt.Errorf("no provider for %s exists", name)
+	}
+	return provider, nil
+}
+
+func (p *Providers) Clear() {
+	*p = Providers{}
+}
 
 // UseProviders adds a list of available providers for use with Goth.
 // Can be called multiple times. If you pass the same provider more
 // than once, the last will be used.
 func UseProviders(viders ...Provider) {
-	for _, provider := range viders {
-		providers[provider.Name()] = provider
-	}
+	providers.Use(viders...)
 }
 
 // GetProviders returns a list of all the providers currently in use.
@@ -45,17 +67,13 @@ func GetProviders() Providers {
 // GetProvider returns a previously created provider. If Goth has not
 // been told to use the named provider it will return an error.
 func GetProvider(name string) (Provider, error) {
-	provider := providers[name]
-	if provider == nil {
-		return nil, fmt.Errorf("no provider for %s exists", name)
-	}
-	return provider, nil
+	return providers.Get(name)
 }
 
 // ClearProviders will remove all providers currently in use.
 // This is useful, mostly, for testing purposes.
 func ClearProviders() {
-	providers = Providers{}
+	providers.Clear()
 }
 
 // ContextForClient provides a context for use with oauth2.

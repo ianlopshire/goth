@@ -33,3 +33,15 @@ func Test_GetProvider(t *testing.T) {
 	a.Equal(err.Error(), "no provider for unknown exists")
 	goth.ClearProviders()
 }
+
+func Test_ClearProviders(t *testing.T) {
+	a := assert.New(t)
+
+	provider := &faux.Provider{}
+	goth.UseProviders(provider)
+
+	goth.ClearProviders()
+
+	_, err := goth.GetProvider(provider.Name())
+	a.Error(err)
+}
